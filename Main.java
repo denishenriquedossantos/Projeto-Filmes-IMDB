@@ -9,11 +9,15 @@ import org.supercsv.prefs.CsvPreference;
 
 import java.io.FileReader;
 import java.io.IOException;
-import java.sql.Connection;
+import java.sql.*;
 
 public class Main {
     public static void main(String[] args) {
-        String csvPath = "Insert path here";
+        String jdbcurl = "jdbc:mysql://localhost:3306/?zeroDateTimeBehavior=convertToNull";
+        String usuario = "user";
+        String senha = "password";
+        
+        String csvPath = "imdb_top_1000.csv";
 
         int batchSize = 20;
 
@@ -40,13 +44,25 @@ public class Main {
         };
 
         try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            connection = DriverManager.getConnection(jdbcurl, usuario, senha);
+            connection.setAutoCommit(false);
+
+            Statement st;
+            st = connection.createStatement();
+            st.executeUpdate("CREATE DATABASE IF NOT EXISTS filmes_db");
+            st.executeUpdate("USE filmes_db");
+            st.executeUpdate("DROP TABLE IF EXISTS filmes");
+            st.executeUpdate("CREATE TABLE filmes (id int NOT NULL AUTO_INCREMENT, nome varchar(100) NOT NULL, ano int NOT NULL, certificado varchar(10) DEFAULT NULL, tempo int NOT NULL, genero varchar(30) NOT NULL, avaliacao_imdb decimal(2,1) NOT NULL, metascore int DEFAULT NULL, diretor varchar(50) NOT NULL, estrela1 varchar(50) NOT NULL, estrela2 varchar(50) NOT NULL, estrela3 varchar(50) NOT NULL, estrela4 varchar(50) NOT NULL, votos int NOT NULL, receita int DEFAULT NULL, PRIMARY KEY (id))");
+
+            String sql = "INSERT INTO filmes (nome, ano, certificado, tempo, genero, avaliacao_imdb, metascore, diretor, estrela1, estrela2, estrela3, estrela4, votos, receita) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            PreparedStatement ps = connection.prepareStatement(sql);
+
             beanReader = new CsvBeanReader(new FileReader(csvPath), CsvPreference.STANDARD_PREFERENCE);
             beanReader.getHeader(true);
 
             String[] header = {"Poster_Link", "Series_Title", "Released_Year", "Certificate", "Runtime", "Genre", "IMDB_Rating", "Overview", "Meta_score", "Director", "Star1", "Star2", "Star3", "Star4", "No_of_Votes", "Gross"};
             Filme bean = null;
-
-            //
 
             int count = 0;
 
@@ -66,21 +82,48 @@ public class Main {
                 Integer votos = bean.getNo_of_Votes();
                 Integer receita = bean.getGross();
 
-                //
+                ps.setString(1, titulo);
+                ps.setInt(2, ano);
+                if (certificado != null) ps.setString(3, certificado);
+                else ps.setNull(3, Types.VARCHAR);
+                ps.setInt(4, tempo);
+                ps.setString(5, genero);
+                ps.setDouble(6, avaliacaoIMDB);
+                if (metascore != null) ps.setInt(7, metascore);
+                else ps.setNull(7, Types.INTEGER);
+                ps.setString(8, diretor);
+                ps.setString(9, estrela1);
+                ps.setString(10, estrela2);
+                ps.setString(11, estrela3);
+                ps.setString(12, estrela4);
+                ps.setInt(13, votos);
+                if (receita != null) ps.setInt(14, receita);
+                else ps.setNull(14, Types.INTEGER);
+
+                ps.addBatch();
 
                 count++;
-                if (count == 20) {
-                    break;
-                    //count = 0;
+                if (count % batchSize == 0) {
+                    ps.executeBatch();
+                    count = 0;
                 }
             }
             beanReader.close();
 
-            //
+            ps.executeBatch();
 
+            connection.commit();
+            connection.close();
 
-        } catch (IOException e) {
+        } catch (IOException | ClassNotFoundException e) {
             System.out.println(e);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            try {
+                connection.rollback();
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
         }
     }
 }
