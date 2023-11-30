@@ -19,6 +19,7 @@ public class ParseMovieIntegerFormat extends CellProcessorAdaptor {
             result = (Integer) value;
         } else if (value instanceof String) {
             try {
+                //Remove todos os caracteres não numéricos da string
                 result = Integer.parseInt(((String) value).replaceAll("[\\D]",""));
             } catch (final NumberFormatException e) {
                 throw new SuperCsvCellProcessorException(String.format("'%s' could not be parsed as an Integer", value), context, this, e);
