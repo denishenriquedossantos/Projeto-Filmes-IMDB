@@ -10,13 +10,15 @@ import org.supercsv.prefs.CsvPreference;
 import java.io.FileReader;
 import java.io.IOException;
 import java.sql.*;
+import java.util.HashSet;
+import java.util.Set;
 
 public class Main {
     public static void main(String[] args) {
         //Link utilizado na conexão do banco de dados
         String jdbcurl = "jdbc:mysql://localhost:3306/?zeroDateTimeBehavior=convertToNull";
         //Nome do usuário e senha para acessar o banco de dados
-        String usuario = "user";
+        String usuario = "root";
         String senha = "password";
 
         //Caminho do arquivo de fonte de dados
@@ -54,17 +56,25 @@ public class Main {
             connection = DriverManager.getConnection(jdbcurl, usuario, senha);
             connection.setAutoCommit(false);
 
-            //Criação de uma base e tabela para os dados
+            //Criação de uma base e tabelas para os dados
             Statement st;
             st = connection.createStatement();
             st.executeUpdate("CREATE DATABASE IF NOT EXISTS filmes_db");
             st.executeUpdate("USE filmes_db");
+            st.executeUpdate("DROP TABLE IF EXISTS generos");
+            st.executeUpdate("DROP TABLE IF EXISTS estrelas");
             st.executeUpdate("DROP TABLE IF EXISTS filmes");
-            st.executeUpdate("CREATE TABLE filmes (id int NOT NULL AUTO_INCREMENT, nome varchar(100) NOT NULL, ano int NOT NULL, certificado varchar(10) DEFAULT NULL, tempo int NOT NULL, genero varchar(30) NOT NULL, avaliacao_imdb decimal(2,1) NOT NULL, metascore int DEFAULT NULL, diretor varchar(50) NOT NULL, estrela1 varchar(50) NOT NULL, estrela2 varchar(50) NOT NULL, estrela3 varchar(50) NOT NULL, estrela4 varchar(50) NOT NULL, votos int NOT NULL, receita int DEFAULT NULL, PRIMARY KEY (id))");
+            st.executeUpdate("CREATE TABLE filmes (nome varchar(100) NOT NULL, ano int NOT NULL, certificado varchar(10) DEFAULT NULL, tempo int NOT NULL, avaliacao_imdb decimal(2,1) NOT NULL, metascore int DEFAULT NULL, diretor varchar(50) NOT NULL, votos int NOT NULL, receita int DEFAULT NULL, PRIMARY KEY (nome))");
+            st.executeUpdate("CREATE TABLE generos (nome varchar(100) NOT NULL, genero varchar(30) NOT NULL, PRIMARY KEY (nome, genero), FOREIGN KEY (nome) REFERENCES filmes(nome) ON DELETE CASCADE)");
+            st.executeUpdate("CREATE TABLE estrelas (nome varchar(100) NOT NULL, estrela varchar(50) NOT NULL, PRIMARY KEY (nome, estrela), FOREIGN KEY (nome) REFERENCES filmes(nome) ON DELETE CASCADE)");
 
-            //Prepara uma declaração SQL como molde das inserções de dados a serem feitas
-            String sql = "INSERT INTO filmes (nome, ano, certificado, tempo, genero, avaliacao_imdb, metascore, diretor, estrela1, estrela2, estrela3, estrela4, votos, receita) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            PreparedStatement ps = connection.prepareStatement(sql);
+            //Prepara declarações SQL como moldes das inserções de dados a serem feitas
+            String sql = "INSERT INTO filmes (nome, ano, certificado, tempo, avaliacao_imdb, metascore, diretor, votos, receita) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            PreparedStatement ps_filmes = connection.prepareStatement(sql);
+            sql = "INSERT INTO generos (nome, genero) VALUES (?, ?)";
+            PreparedStatement ps_generos = connection.prepareStatement(sql);
+            sql = "INSERT INTO estrelas (nome, estrela) VALUES (?, ?)";
+            PreparedStatement ps_estrelas = connection.prepareStatement(sql);
 
             //Direciona o leitor à fonte de dados
             beanReader = new CsvBeanReader(new FileReader(csvPath), CsvPreference.STANDARD_PREFERENCE);
@@ -83,50 +93,65 @@ public class Main {
                 Integer ano = bean.getReleased_Year();
                 String certificado = bean.getCertificate();
                 Integer tempo = bean.getRuntime();
-                String genero = bean.getGenre();
+                String[] genero = bean.getGenre().split("[, ]+");
                 Double avaliacaoIMDB = bean.getIMDB_Rating();
                 Integer metascore = bean.getMeta_score();
                 String diretor = bean.getDirector();
-                String estrela1 = bean.getStar1();
-                String estrela2 = bean.getStar2();
-                String estrela3 = bean.getStar3();
-                String estrela4 = bean.getStar4();
+                Set<String> estrela = new HashSet<String>();
+                estrela.add(bean.getStar1());
+                estrela.add(bean.getStar2());
+                estrela.add(bean.getStar3());
+                estrela.add(bean.getStar4());
                 Integer votos = bean.getNo_of_Votes();
                 Integer receita = bean.getGross();
 
-                //Insere os dados na declaração SQL
-                ps.setString(1, titulo);
-                ps.setInt(2, ano);
-                if (certificado != null) ps.setString(3, certificado);
-                else ps.setNull(3, Types.VARCHAR);
-                ps.setInt(4, tempo);
-                ps.setString(5, genero);
-                ps.setDouble(6, avaliacaoIMDB);
-                if (metascore != null) ps.setInt(7, metascore);
-                else ps.setNull(7, Types.INTEGER);
-                ps.setString(8, diretor);
-                ps.setString(9, estrela1);
-                ps.setString(10, estrela2);
-                ps.setString(11, estrela3);
-                ps.setString(12, estrela4);
-                ps.setInt(13, votos);
-                if (receita != null) ps.setInt(14, receita);
-                else ps.setNull(14, Types.INTEGER);
+                //Corrigindo caso duplicado
+                if (titulo.equals("Drishyam")) {
+                    titulo = titulo + " (" + ano + ")";
+                }
 
-                //Adiciona a declaração no lote
-                ps.addBatch();
+                //Insere os dados nas declarações SQL
+                ps_filmes.setString(1, titulo);
+                ps_filmes.setInt(2, ano);
+                if (certificado != null) ps_filmes.setString(3, certificado);
+                else ps_filmes.setNull(3, Types.VARCHAR);
+                ps_filmes.setInt(4, tempo);
+                ps_filmes.setDouble(5, avaliacaoIMDB);
+                if (metascore != null) ps_filmes.setInt(6, metascore);
+                else ps_filmes.setNull(6, Types.INTEGER);
+                ps_filmes.setString(7, diretor);
+                ps_filmes.setInt(8, votos);
+                if (receita != null) ps_filmes.setInt(9, receita);
+                else ps_filmes.setNull(9, Types.INTEGER);
+
+                //Adiciona as declarações no lote
+                ps_filmes.addBatch();
+                for (String s : genero) {
+                    ps_generos.setString(1, titulo);
+                    ps_generos.setString(2, s);
+                    ps_generos.addBatch();
+                }
+                for (String s : estrela) {
+                    ps_estrelas.setString(1, titulo);
+                    ps_estrelas.setString(2, s);
+                    ps_estrelas.addBatch();
+                }
 
                 //Executa as declarações do lote quando chega a seu limite
                 count++;
                 if (count % batchSize == 0) {
-                    ps.executeBatch();
+                    ps_filmes.executeBatch();
+                    ps_generos.executeBatch();
+                    ps_estrelas.executeBatch();
                     count = 0;
                 }
             }
             beanReader.close();
 
             //Executa o resto das declarações
-            ps.executeBatch();
+            ps_filmes.executeBatch();
+            ps_generos.executeBatch();
+            ps_estrelas.executeBatch();
 
             //Fecha a conexão com o banco
             connection.commit();
